@@ -148,6 +148,7 @@ app.get('/event-stream', (req, res) => {
 // Webhook event which will be called by EnableX server once an outbound call is made
 // It should be publicly accessible. Please refer document for webhook security.
 app.post('/event', (req, res) => {
+  logger.info('called');
   const key = createDecipher(req.headers['x-algoritm'], process.env.ENABLEX_APP_ID);
   let decryptedData = key.update(req.body.encrypted_data, req.headers['x-format'], req.headers['x-encoding']);
   decryptedData += key.final(req.headers['x-encoding']);
