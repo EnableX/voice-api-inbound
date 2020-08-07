@@ -1,33 +1,54 @@
-const https = require('https');
-const events = require('events');
-const express = require('express');
-
-const eventEmitter = new events.EventEmitter();
-const bodyParser = require('body-parser');
-const crypto = require('crypto');
-const ngrok = require('ngrok');
-const _ = require('lodash');
+// core modules
+const { createServer } = require('https');
 const { readFileSync } = require('fs');
-const config = require('./config-inbound');
+// modules installed from npm
+const { EventEmitter } = require('events');
+const express = require('express');
+const bodyParser = require('body-parser');
+const { createDecipher } = require('crypto');
+const { connect } = require('ngrok');
+require('dotenv').config();
+const _ = require('lodash');
+// application modules
 const logger = require('./logger');
 const {
-  makeVoiceAPICall, hangupCall, onError,
+  playVoiceIVR, hangupCall,
 } = require('./voiceapi');
 
+// Express app setup
 const app = express();
-let activeCall = false;
-let url = '';
-let retryCounter = 0;
-let digitcollected = false;
-let server;
-/* Object to maintain Call Details */
-const call = {};
-const consoleLog = [];
+const eventEmitter = new EventEmitter();
 
-function onListening() {
-  logger.info(`Listening on Port ${config.webhook_port}`);
+let server;
+let webHookUrl;
+let activeCall = false;
+let retryCounter = 0;
+let digitCollected = false;
+const call = {};
+const sseMsg = [];
+const servicePort = process.env.SERVICE_PORT || 3000;
+
+// Handle error generated while creating / starting an http server
+function onError(error) {
+  if (error.syscall !== 'listen') {
+    throw error;
+  }
+
+  switch (error.code) {
+    case 'EACCES':
+      logger.error(`Port ${servicePort} requires elevated privileges`);
+      process.exit(1);
+      break;
+    case 'EADDRINUSE':
+      logger.error(`Port ${servicePort} is already in use`);
+      process.exit(1);
+      break;
+    default:
+      throw error;
+  }
 }
 
+// shutdown the node server forcefully
 function shutdown() {
   server.close(() => {
     logger.error('Shutting down the server');
@@ -38,52 +59,74 @@ function shutdown() {
   }, 10000);
 }
 
-/* Initializing WebServer */
-if (config.ngrok === true) {
-  server = app.listen(config.webhook_port, () => {
-    logger.info(`Server running on port ${config.webhook_port}`);
-    // eslint-disable-next-line wrap-iife
+// exposes web server running on local machine to the internet
+// @param - web server port
+// @return - public URL of your tunnel
+function createNgrokTunnel(serverPort) {
+  server = app.listen(serverPort, () => {
+    console.log(`Server running on port ${serverPort}`);
     (async () => {
       try {
-        url = await ngrok.connect({ proto: 'http', addr: config.webhook_port });
-        console.log('ngrok tunnel set up:', url);
+        webHookUrl = await connect({ proto: 'http', addr: serverPort });
+        console.log('ngrok tunnel set up:', webHookUrl);
       } catch (error) {
-        console.log(`Error happened while trying to connect via ngrock ${JSON.stringify(error)}`);
+        console.log(`Error happened while trying to connect via ngrok ${JSON.stringify(error)}`);
         shutdown();
         return;
       }
-      url += '/event';
-      console.log('Update this URL in portal, to receive incoming calls: ', url);
+      webHookUrl += '/event';
+      console.log(`To call webhook while inbound calls, Update this URL in portal: ${webHookUrl}`);
     })();
   });
-} else if (config.ngrok === false) {
-  const options = {
-    key: readFileSync(config.certificate.ssl_key).toString(),
-    cert: readFileSync(config.certificate.ssl_cert).toString(),
-  };
-  if (config.certificate.ssl_ca_certs) {
-    options.ca = [];
-    options.ca.push(readFileSync(config.certificate.ssl_ca_certs).toString());
-  }
-  server = https.createServer(options, app);
-  app.set('port', config.webhook_port);
-  server.listen(config.webhook_port);
-
-  server.on('error', onError);
-  server.on('listening', onListening);
-  url = `https://${config.webhook_host}:${config.webhook_port}/event`;
 }
+
+// Set webhook event url
+function setWebHookEventUrl() {
+  logger.info(`Listening on Port ${servicePort}`);
+  webHookUrl = `${process.env.PUBLIC_WEBHOOK_HOST}/event`;
+  logger.info(`To call webhook while inbound calls, Update this URL in portal: ${webHookUrl}`);
+}
+
+// create and start an HTTPS node app server
+// An SSL Certificate (Self Signed or Registered) is required
+function createAppServer(serverPort) {
+  const options = {
+    key: readFileSync(process.env.CERTIFICATE_SSL_KEY).toString(),
+    cert: readFileSync(process.env.CERTIFICATE_SSL_CERT).toString(),
+  };
+  if (process.env.CERTIFICATE_SSL_CACERTS) {
+    options.ca = [];
+    options.ca.push(readFileSync(process.env.CERTIFICATE_SSL_CACERTS).toString());
+  }
+
+  // Create https express server
+  server = createServer(options, app);
+  app.set('port', serverPort);
+  server.listen(serverPort);
+  server.on('error', onError);
+  server.on('listening', setWebHookEventUrl);
+}
+
+/* Initializing WebServer */
+if (process.env.USE_NGROK_TUNNEL === 'true' && process.env.USE_PUBLIC_WEBHOOK === 'false') {
+  createNgrokTunnel(servicePort);
+} else if (process.env.USE_PUBLIC_WEBHOOK === 'true' && process.env.USE_NGROK_TUNNEL === 'false') {
+  createAppServer(servicePort);
+} else {
+  logger.error('Incorrect configuration - either USE_NGROK_TUNNEL or USE_PUBLIC_WEBHOOK should be set to true');
+}
+
+process.on('SIGINT', () => {
+  logger.info('Caught interrupt signal');
+  shutdown();
+});
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(express.static('client'));
 
-function constructSSE(res, id, data) {
-  res.write(`id: ${id}\n`);
-  res.write(`data: ${data}\n\n`);
-}
-
-function sendSSE(req, res) {
+// It will send stream / events all the events received from webhook to the client
+app.get('/event-stream', (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -93,35 +136,33 @@ function sendSSE(req, res) {
   const id = (new Date()).toLocaleTimeString();
 
   setInterval(() => {
-    if (!_.isEmpty(consoleLog[0])) {
-      const data = `${consoleLog[0]}`;
-      constructSSE(res, id, data);
-      consoleLog.pop();
+    if (!_.isEmpty(sseMsg[0])) {
+      const data = `${sseMsg[0]}`;
+      res.write(`id: ${id}\n`);
+      res.write(`data: ${data}\n\n`);
+      sseMsg.pop();
     }
   }, 100);
-}
-
-app.get('/event-stream', (req, res) => {
-  sendSSE(req, res);
 });
 
+// Webhook event which will be called by EnableX server once an outbound call is made
+// It should be publicly accessible. Please refer document for webhook security.
 app.post('/event', (req, res) => {
-  const appId = config.app_id;
-
-  const key = crypto.createDecipher(req.headers['x-algoritm'], appId);
+  const key = createDecipher(req.headers['x-algoritm'], process.env.ENABLEX_APP_ID);
   let decryptedData = key.update(req.body.encrypted_data, req.headers['x-format'], req.headers['x-encoding']);
   decryptedData += key.final(req.headers['x-encoding']);
   const jsonObj = JSON.parse(decryptedData);
+  logger.info(JSON.stringify(jsonObj));
 
-  res.statusCode = 200;
   res.send();
-  res.end();
+  res.status(200);
   eventEmitter.emit('voicestateevent', jsonObj);
 });
 
+// Call is completed / disconneted, inform server to hangup the call
 function timeOutHandler() {
   logger.info(`[${call.voice_id}] Disconnecting the call`);
-  hangupCall(`${config.path}/${call.voice_id}`, () => {});
+  hangupCall(call.voice_id, () => {});
 }
 
 /* WebHook Event Handler function */
@@ -129,29 +170,34 @@ function voiceEventHandler(voiceEvent) {
   if (activeCall === false && voiceEvent.state === 'incomingcall') {
     activeCall = true;
     call.voice_id = voiceEvent.voice_id;
-    logger.info(`[${call.voice_id}] Received an inbound Call`);
-    consoleLog.push(`Received an inbound Call with id ${call.voice_id}`);
+    const eventMsg = `[${call.voice_id}] Received an inbound Call`;
+    logger.info(eventMsg);
+    sseMsg.push(eventMsg);
   } else if (voiceEvent.state && voiceEvent.state === 'disconnected') {
-    logger.info(`[${call.voice_id}] Call is disconnected`);
-    consoleLog.push('Call is disconnected');
+    const eventMsg = `[${call.voice_id}] Call is disconnected`;
+    logger.info(eventMsg);
+    sseMsg.push(eventMsg);
     activeCall = false;
     retryCounter = 0;
-    digitcollected = false;
+    digitCollected = false;
   } else if (voiceEvent.playstate !== undefined) {
     if (voiceEvent.playstate === 'playfinished' && voiceEvent.prompt_ref === '3') {
-      logger.info(`[${call.voice_id}] DTMF prompt played, Disconnecting the call in 10 Sec`);
-      consoleLog.push('DTMF prompt played, Disconnecting the call in 10 Sec');
+      const eventMsg = `[${call.voice_id}] DTMF prompt played, Disconnecting the call in 10 Sec`;
+      logger.info(eventMsg);
+      sseMsg.push(eventMsg);
       setTimeout(timeOutHandler, 10000);
     } else if (voiceEvent.playstate === 'playfinished' && voiceEvent.prompt_ref === '2') {
-      if (digitcollected === false) {
-        logger.info(`[${call.voice_id}] 1st Level IVR menu is finished, Disconnecting the call in 10 Sec`);
-        consoleLog.push('1st Level IVR menu is finished, Disconnecting the call in 10 Sec');
+      if (digitCollected === false) {
+        const eventMsg = `[${call.voice_id}] 1st Level IVR menu is finished, Disconnecting the call in 10 Sec`;
+        logger.info(eventMsg);
+        sseMsg.push(eventMsg);
         setTimeout(timeOutHandler, 10000);
       }
     } else if (voiceEvent.playstate === 'digitcollected' && voiceEvent.prompt_ref === '2') {
-      digitcollected = true;
-      logger.info(`[${call.voice_id}] Received DTMF Digit ${voiceEvent.digit}`);
-      consoleLog.push(`Received DTMF Digit ${voiceEvent.digit}`);
+      digitCollected = true;
+      const eventMsg = `[${call.voice_id}] Received DTMF Digit ${voiceEvent.digit}`;
+      logger.info(eventMsg);
+      sseMsg.push(eventMsg);
       const dtmfPrompt = `DTMF received is ${voiceEvent.digit}, Disconnecting the call in 10 seconds`;
       const playCommand = JSON.stringify({
         play: {
@@ -161,10 +207,11 @@ function voiceEventHandler(voiceEvent) {
           prompt_ref: '3',
         },
       });
-      makeVoiceAPICall(`${config.path}/${call.voice_id}`, playCommand, () => {});
+      playVoiceIVR(call.voice_id, playCommand, () => {});
     } else if (voiceEvent.playstate === 'playfinished') {
-      logger.info(`[${call.voice_id}] Greeting is completed, Playing IVR Menu`);
-      consoleLog.push('Greeting is completed, Playing IVR Menu');
+      const eventMsg = `[${call.voice_id}] Greeting is completed, Playing IVR Menu`;
+      logger.info(eventMsg);
+      sseMsg.push(eventMsg);
       /* Playing IVR menu using TTS */
       const playCommand = JSON.stringify({
         play: {
@@ -176,9 +223,9 @@ function voiceEventHandler(voiceEvent) {
           prompt_ref: '2',
         },
       });
-      makeVoiceAPICall(`${config.path}/${call.voice_id}`, playCommand, () => {});
+      playVoiceIVR(call.voice_id, playCommand, () => {});
     } else if ((retryCounter !== 3) && voiceEvent.playstate === 'menutimeout' && voiceEvent.prompt_ref === '2') {
-      consoleLog.push('You have not provided any digit, Please press a digit, please press 1 for accounts, press 2 for engineering, press 3 to connect to a agent');
+      sseMsg.push(`[${call.voice_id}] no digit provided, Please press a digit, please press 1 for accounts, press 2 for engineering, press 3 to connect to a agent`);
       retryCounter += 1;
       const playCommand = JSON.stringify({
         play: {
@@ -190,9 +237,9 @@ function voiceEventHandler(voiceEvent) {
           prompt_ref: '2',
         },
       });
-      makeVoiceAPICall(`${config.path}/${call.voice_id}`, playCommand, () => {});
+      playVoiceIVR(call.voice_id, playCommand, () => {});
     } else {
-      consoleLog.push('You have not provided any digit, Disconnecting the call in 10 seconds');
+      sseMsg.push(`[${call.voice_id}] no digit provided, Disconnecting the call in 10 seconds`);
       const playCommand = JSON.stringify({
         play: {
           text: 'You have not provided any digit, Disconnecting the call in 10 seconds',
@@ -201,19 +248,15 @@ function voiceEventHandler(voiceEvent) {
           prompt_ref: '3',
         },
       });
-      makeVoiceAPICall(`${config.path}/${call.voice_id}`, playCommand, () => {});
+      playVoiceIVR(call.voice_id, playCommand, () => {});
     }
   } else if (activeCall === true && voiceEvent.state === 'incomingcall') {
-    logger.info(`Already 1 call is active, Rejecting this Incoming Call ${voiceEvent.voice_id}`);
-    consoleLog.push(`Already 1 call is active, Rejecting this Incoming Call ${voiceEvent.voice_id}`);
-    hangupCall(`${config.path}/${voiceEvent.voice_id}`, () => {});
+    const eventMsg = `Already 1 call is active, Rejecting this Incoming Call ${voiceEvent.voice_id}`;
+    logger.info(eventMsg);
+    sseMsg.push(eventMsg);
+    hangupCall(voiceEvent.voice_id, () => {});
   }
 }
-
-process.on('SIGINT', () => {
-  logger.info('Caught interrupt signal');
-  shutdown();
-});
 
 /* Registering WebHook Event Handler function */
 eventEmitter.on('voicestateevent', voiceEventHandler);
