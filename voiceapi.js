@@ -49,6 +49,7 @@ function playVoiceIVR(callVoiceId, data, callback) {
   httpOptions.method = 'POST';
 
   connectEnablexServer(data, (response) => {
+    logger.info(`RESPONSE:- ${response}`);
     callback(response);
   });
 }
@@ -59,6 +60,7 @@ function hangupCall(callVoiceId, callback) {
   httpOptions.method = 'DELETE';
 
   connectEnablexServer('', (response) => {
+    logger.info(`RESPONSE:- ${response}`);
     callback(response);
   });
 }
