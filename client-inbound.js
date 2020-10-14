@@ -1,5 +1,5 @@
 // core modules
-const { createServer } = require('https');
+const https = require('https');
 const { readFileSync } = require('fs');
 // modules installed from npm
 const { EventEmitter } = require('events');
@@ -100,7 +100,7 @@ function createAppServer() {
   }
 
   // Create https express server
-  server = createServer(options, app);
+  server = https.createServer(options, app);
   app.set('port', servicePort);
   server.listen(servicePort);
   server.on('error', onError);
@@ -154,11 +154,16 @@ app.get('/event-stream', (req, res) => {
 // It should be publicly accessible. Please refer document for webhook security.
 app.post('/event', (req, res) => {
   logger.info('called');
-  const key = createDecipher(req.headers['x-algoritm'], process.env.ENABLEX_APP_ID);
-  let decryptedData = key.update(req.body.encrypted_data, req.headers['x-format'], req.headers['x-encoding']);
-  decryptedData += key.final(req.headers['x-encoding']);
-  const jsonObj = JSON.parse(decryptedData);
-  logger.info(JSON.stringify(jsonObj));
+  if(req.headers['x-algoritm'] !== undefined){
+      const key = createDecipher(req.headers['x-algoritm'], process.env.ENABLEX_APP_ID);
+      let decryptedData = key.update(req.body.encrypted_data, req.headers['x-format'], req.headers['x-encoding']);
+      decryptedData += key.final(req.headers['x-encoding']);
+      const jsonObj = JSON.parse(decryptedData);
+      logger.info(JSON.stringify(jsonObj));
+  } else {
+      const jsonObj = req.body;
+      logger.info(JSON.stringify(jsonObj));
+  }
 
   res.send();
   res.status(200);
@@ -206,12 +211,10 @@ function voiceEventHandler(voiceEvent) {
       sseMsg.push(eventMsg);
       const dtmfPrompt = `DTMF received is ${voiceEvent.digit}, Disconnecting the call in 10 seconds`;
       const playCommand = JSON.stringify({
-        play: {
           text: dtmfPrompt,
           voice: 'female',
           language: 'en-US',
-          prompt_ref: '3',
-        },
+          prompt_ref: '3'
       });
       playVoiceIVR(call.voice_id, playCommand, () => {});
     } else if (voiceEvent.playstate === 'playfinished') {
@@ -220,39 +223,33 @@ function voiceEventHandler(voiceEvent) {
       sseMsg.push(eventMsg);
       /* Playing IVR menu using TTS */
       const playCommand = JSON.stringify({
-        play: {
           text: 'This is the 1st level IVR menu, please press 1 for accounts, press 2 for engineering, press 3 to connect to a agent',
           voice: 'female',
           language: 'en-US',
           dtmf: true,
           interrupt: false,
-          prompt_ref: '2',
-        },
+          prompt_ref: '2'
       });
       playVoiceIVR(call.voice_id, playCommand, () => {});
     } else if ((retryCounter !== 3) && voiceEvent.playstate === 'menutimeout' && voiceEvent.prompt_ref === '2') {
       sseMsg.push(`[${call.voice_id}] no digit provided, Please press a digit, please press 1 for accounts, press 2 for engineering, press 3 to connect to a agent`);
       retryCounter += 1;
       const playCommand = JSON.stringify({
-        play: {
           text: 'You have not provided any digit, Please press a digit, please press 1 for accounts, press 2 for engineering, press 3 to connect to a agent',
           voice: 'female',
           language: 'en-US',
           dtmf: true,
           interrupt: false,
-          prompt_ref: '2',
-        },
+          prompt_ref: '2'
       });
       playVoiceIVR(call.voice_id, playCommand, () => {});
-    } else {
+    } else if (retryCounter === 3){
       sseMsg.push(`[${call.voice_id}] no digit provided, Disconnecting the call in 10 seconds`);
       const playCommand = JSON.stringify({
-        play: {
           text: 'You have not provided any digit, Disconnecting the call in 10 seconds',
           voice: 'female',
           language: 'en-US',
-          prompt_ref: '3',
-        },
+          prompt_ref: '3'
       });
       playVoiceIVR(call.voice_id, playCommand, () => {});
     }

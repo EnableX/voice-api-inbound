@@ -45,8 +45,8 @@ const connectEnablexServer = (data, callback) => {
 
 // Voice API call to play IVR using TTS
 function playVoiceIVR(callVoiceId, data, callback) {
-  httpOptions.path = `/voice/v1/calls/${callVoiceId}`;
-  httpOptions.method = 'POST';
+  httpOptions.path = `/voice/v1/call/${callVoiceId}/play`;
+  httpOptions.method = 'PUT';
 
   connectEnablexServer(data, (response) => {
     logger.info(`RESPONSE:- ${response}`);
@@ -56,7 +56,7 @@ function playVoiceIVR(callVoiceId, data, callback) {
 
 // Voice API call to hangup the call
 function hangupCall(callVoiceId, callback) {
-  httpOptions.path = `/voice/v1/calls/${callVoiceId}`;
+  httpOptions.path = `/voice/v1/call/${callVoiceId}`;
   httpOptions.method = 'DELETE';
 
   connectEnablexServer('', (response) => {
