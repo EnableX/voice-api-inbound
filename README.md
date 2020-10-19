@@ -1,7 +1,8 @@
 # **Basic Client Examples to demonstrate Inbound Calls using Enablex Voice APIs. **
 This example contains instructions how users can initiate Inbound Calls.
 
-## Prerequisite
+
+## Pre-requisite
 - You will need Enablex Application credentials, APP ID and APP KEY.
 - You will need a place for hosting this application either cloud or local machine.
 - If hosting on local machine, you need to install ngrok from https://ngrok.com/
@@ -11,6 +12,7 @@ This example contains instructions how users can initiate Inbound Calls.
 - `git clone https://github.com/EnableX/voice-api-inbound.git`
 - `cd voice-api-inbound`
 - `npm install`
+
 
 ## Setting up configurations using environment variables
 - Set APP ID and APP KEY. It is required configuration.
@@ -38,9 +40,15 @@ This example contains instructions how users can initiate Inbound Calls.
   - ngrok (https://ngrok.com/) should be installed on your computer
     - `USE_NGROK_TUNNEL=`
 
-- SSL Certificate (Self Signed or Registered). It is required configuration if USE_PUBLIC_WEBHOOK is set to true.
-  - Make a directory called certs on the root of the project - `mkdir certs`
-  - Change to certs directory - `cd certs`
+- Set to run the service on http / https (false / true)
+  - `export LISTEN_SSL=`
+
+
+## SSL Certificate (Self Signed or Registered). It is required configuration if USE_PUBLIC_WEBHOOK is set to true or LISTEN_SSL is set to true.
+  - Make a directory called certs on the root of the project
+    - `mkdir certs`
+  - Change to certs directory
+    - `cd certs`
   - Create and Install certificates
     - `openssl req -nodes -new -x509   -keyout example.key -out example.crt   -days 365   -subj '/CN=example.com/O=My Company Name LTD./C=US'; cat example.crt > example.ca-bundle`
   - use the certificate .key [self signed or registered]
@@ -52,11 +60,6 @@ This example contains instructions how users can initiate Inbound Calls.
   - switch to the root of the project
     - `cd ..`
 
-## Webhook security
-- Webhook security is also implemented as part of the voice service APIs.
-- Enablex Voice Server does encryption of Webhook payload using 'md5' encryption and app_id as key.
-- Client needs to do decryption of payload using app_id provided by Enablex and algorithm, format, encoding parameters present in x-algoritm, x-format and x-encoding header.
-- Please refer to the documentation and examples for proper way of handling Webhook payloads.
 
 ## Starting the client application script
 - For Inbound Calls

@@ -1,6 +1,7 @@
 // core modules
+const fs = require('fs');
+const http = require('http');
 const https = require('https');
-const { readFileSync } = require('fs');
 // modules installed from npm
 const { EventEmitter } = require('events');
 const express = require('express');
@@ -90,17 +91,21 @@ function setWebHookEventUrl() {
 // create and start an HTTPS node app server
 // An SSL Certificate (Self Signed or Registered) is required
 function createAppServer() {
-  const options = {
-    key: readFileSync(process.env.CERTIFICATE_SSL_KEY).toString(),
-    cert: readFileSync(process.env.CERTIFICATE_SSL_CERT).toString(),
-  };
-  if (process.env.CERTIFICATE_SSL_CACERTS) {
-    options.ca = [];
-    options.ca.push(readFileSync(process.env.CERTIFICATE_SSL_CACERTS).toString());
+  if (process.env.LISTEN_SSL) {
+    const options = {
+      key: fs.readFileSync(process.env.CERTIFICATE_SSL_KEY).toString(),
+      cert: fs.readFileSync(process.env.CERTIFICATE_SSL_CERT).toString(),
+    };
+    if (process.env.CERTIFICATE_SSL_CACERTS) {
+      options.ca = [];
+      options.ca.push(fs.readFileSync(process.env.CERTIFICATE_SSL_CACERTS).toString());
+    }
+    // Create https express server
+    server = https.createServer(options, app);
+  } else {
+    // Create http express server
+    server = http.createServer(app);
   }
-
-  // Create https express server
-  server = https.createServer(options, app);
   app.set('port', servicePort);
   server.listen(servicePort);
   server.on('error', onError);
@@ -108,8 +113,7 @@ function createAppServer() {
 }
 
 /* Initializing WebServer */
-if (process.env.ENABLEX_APP_ID
-  && process.env.ENABLEX_APP_KEY) {
+if (process.env.ENABLEX_APP_ID && process.env.ENABLEX_APP_KEY) {
   if (process.env.USE_NGROK_TUNNEL === 'true' && process.env.USE_PUBLIC_WEBHOOK === 'false') {
     createNgrokTunnel();
   } else if (process.env.USE_PUBLIC_WEBHOOK === 'true' && process.env.USE_NGROK_TUNNEL === 'false') {
@@ -154,15 +158,16 @@ app.get('/event-stream', (req, res) => {
 // It should be publicly accessible. Please refer document for webhook security.
 app.post('/event', (req, res) => {
   logger.info('called');
-  if(req.headers['x-algoritm'] !== undefined){
-      const key = createDecipher(req.headers['x-algoritm'], process.env.ENABLEX_APP_ID);
-      let decryptedData = key.update(req.body.encrypted_data, req.headers['x-format'], req.headers['x-encoding']);
-      decryptedData += key.final(req.headers['x-encoding']);
-      const jsonObj = JSON.parse(decryptedData);
-      logger.info(JSON.stringify(jsonObj));
+  let jsonObj;
+  if (req.headers['x-algoritm'] !== undefined) {
+    const key = createDecipher(req.headers['x-algoritm'], process.env.ENABLEX_APP_ID);
+    let decryptedData = key.update(req.body.encrypted_data, req.headers['x-format'], req.headers['x-encoding']);
+    decryptedData += key.final(req.headers['x-encoding']);
+    jsonObj = JSON.parse(decryptedData);
+    logger.info(JSON.stringify(jsonObj));
   } else {
-      const jsonObj = req.body;
-      logger.info(JSON.stringify(jsonObj));
+    jsonObj = req.body;
+    logger.info(JSON.stringify(jsonObj));
   }
 
   res.send();
@@ -211,10 +216,10 @@ function voiceEventHandler(voiceEvent) {
       sseMsg.push(eventMsg);
       const dtmfPrompt = `DTMF received is ${voiceEvent.digit}, Disconnecting the call in 10 seconds`;
       const playCommand = JSON.stringify({
-          text: dtmfPrompt,
-          voice: 'female',
-          language: 'en-US',
-          prompt_ref: '3'
+        text: dtmfPrompt,
+        voice: 'female',
+        language: 'en-US',
+        prompt_ref: '3',
       });
       playVoiceIVR(call.voice_id, playCommand, () => {});
     } else if (voiceEvent.playstate === 'playfinished') {
@@ -223,33 +228,33 @@ function voiceEventHandler(voiceEvent) {
       sseMsg.push(eventMsg);
       /* Playing IVR menu using TTS */
       const playCommand = JSON.stringify({
-          text: 'This is the 1st level IVR menu, please press 1 for accounts, press 2 for engineering, press 3 to connect to a agent',
-          voice: 'female',
-          language: 'en-US',
-          dtmf: true,
-          interrupt: false,
-          prompt_ref: '2'
+        text: 'This is the 1st level IVR menu, please press 1 for accounts, press 2 for engineering, press 3 to connect to a agent',
+        voice: 'female',
+        language: 'en-US',
+        dtmf: true,
+        interrupt: false,
+        prompt_ref: '2',
       });
       playVoiceIVR(call.voice_id, playCommand, () => {});
     } else if ((retryCounter !== 3) && voiceEvent.playstate === 'menutimeout' && voiceEvent.prompt_ref === '2') {
       sseMsg.push(`[${call.voice_id}] no digit provided, Please press a digit, please press 1 for accounts, press 2 for engineering, press 3 to connect to a agent`);
       retryCounter += 1;
       const playCommand = JSON.stringify({
-          text: 'You have not provided any digit, Please press a digit, please press 1 for accounts, press 2 for engineering, press 3 to connect to a agent',
-          voice: 'female',
-          language: 'en-US',
-          dtmf: true,
-          interrupt: false,
-          prompt_ref: '2'
+        text: 'You have not provided any digit, Please press a digit, please press 1 for accounts, press 2 for engineering, press 3 to connect to a agent',
+        voice: 'female',
+        language: 'en-US',
+        dtmf: true,
+        interrupt: false,
+        prompt_ref: '2',
       });
       playVoiceIVR(call.voice_id, playCommand, () => {});
-    } else if (retryCounter === 3){
+    } else if (retryCounter === 3) {
       sseMsg.push(`[${call.voice_id}] no digit provided, Disconnecting the call in 10 seconds`);
       const playCommand = JSON.stringify({
-          text: 'You have not provided any digit, Disconnecting the call in 10 seconds',
-          voice: 'female',
-          language: 'en-US',
-          prompt_ref: '3'
+        text: 'You have not provided any digit, Disconnecting the call in 10 seconds',
+        voice: 'female',
+        language: 'en-US',
+        prompt_ref: '3',
       });
       playVoiceIVR(call.voice_id, playCommand, () => {});
     }
