@@ -54,6 +54,17 @@ function playVoiceIVR(callVoiceId, data, callback) {
   });
 }
 
+// Voice API to accept incomingcall
+function acceptCall(callVoiceId, callback) {
+   httpOptions.path = `/voice/v1/call/${callVoiceId}/accept`;
+   httpOptions.method = 'PUT';
+
+   connectEnablexServer('', (response) => {
+    logger.info(`RESPONSE:- ${response}`);
+    callback(response);
+   });
+}
+
 // Voice API call to hangup the call
 function hangupCall(callVoiceId, callback) {
   httpOptions.path = `/voice/v1/call/${callVoiceId}`;
@@ -68,4 +79,5 @@ function hangupCall(callVoiceId, callback) {
 module.exports = {
   playVoiceIVR,
   hangupCall,
+  acceptCall,
 };

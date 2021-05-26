@@ -13,7 +13,7 @@ const _ = require('lodash');
 // application modules
 const logger = require('./logger');
 const {
-  playVoiceIVR, hangupCall,
+  playVoiceIVR, hangupCall, acceptCall,
 } = require('./voiceapi');
 
 // Express app setup
@@ -189,6 +189,7 @@ function voiceEventHandler(voiceEvent) {
     const eventMsg = `[${call.voice_id}] Received an inbound Call`;
     logger.info(eventMsg);
     sseMsg.push(eventMsg);
+    acceptCall(call.voice_id, () => {});
   } else if (voiceEvent.state && voiceEvent.state === 'disconnected') {
     const eventMsg = `[${call.voice_id}] Call is disconnected`;
     logger.info(eventMsg);
