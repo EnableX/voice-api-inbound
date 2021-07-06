@@ -15,6 +15,9 @@ This example contains instructions how users can initiate Inbound Calls.
 
 
 ## Setting up configurations using environment variables
+
+Mac/Linux
+
 - Set APP ID and APP KEY. It is required configuration.
   - `export ENABLEX_APP_ID=`
   - `export ENABLEX_APP_KEY=`
@@ -43,14 +46,22 @@ This example contains instructions how users can initiate Inbound Calls.
 - Set to run the service on http / https (false / true)
   - `export LISTEN_SSL=`
 
+Windows 
+  - Make a file with name ".env" in root directory . And copy content of .env.example in .env file . Then set the environment variables manually in .env file. And below are the environment variables.
+  - `ENABLEX_APP_ID`, `ENABLEX_APP_KEY` , `SERVICE_PORT` , `USE_PUBLIC_WEBHOOK` , `PUBLIC_WEBHOOK_HOST` ,`USE_NGROK_TUNNEL` ,`LISTEN_SSL`
+  Their explanation is given in Linux/Mac section (Upper section).
+
 
 ## SSL Certificate (Self Signed or Registered). It is required configuration if USE_PUBLIC_WEBHOOK is set to true or LISTEN_SSL is set to true.
+
+Mac/Linux
+
   - Make a directory called certs on the root of the project
     - `mkdir certs`
   - Change to certs directory
     - `cd certs`
   - Create and Install certificates
-    - `openssl req -nodes -new -x509   -keyout example.key -out example.crt   -days 365   -subj '/CN=example.com/O=My Company Name LTD./C=US'; cat example.crt > example.ca-bundle`
+    - `sudo openssl req -nodes -new -x509   -keyout example.key -out example.crt   -days 365   -subj '/CN=example.com/O=My Company Name LTD./C=US'; cat example.crt > example.ca-bundle`
   - use the certificate .key [self signed or registered]
     - `export CERTIFICATE_SSL_KEY=`
   - use the certificate .crt [self signed or registered]
@@ -60,6 +71,23 @@ This example contains instructions how users can initiate Inbound Calls.
   - switch to the root of the project
     - `cd ..`
 
+Windows(Use Git Bash)
+
+ - Make a directory called certs on the root of the project
+    - `mkdir certs`
+  - Change to certs directory
+    - `cd certs`
+  - Create and Install certificates
+    - `openssl req -nodes -new -x509   -keyout example.key -out example.crt   -days 365 `  
+    - `cat example.crt > example.ca-bundle`
+  - use the certificate .key [self signed or registered]
+    - `export CERTIFICATE_SSL_KEY=`
+  - use the certificate .crt [self signed or registered]
+    - `export CERTIFICATE_SSL_CERT=`
+  - use the certificate CA[chain] [self signed or registered]
+    - `export CERTIFICATE_SSL_CACERTS=`
+  - switch to the root of the project
+    - `cd ..`
 
 ## Starting the client application script
 - For Inbound Calls
