@@ -71,23 +71,24 @@ Mac/Linux
   - switch to the root of the project
     - `cd ..`
 
-Windows(Use Git Bash)
-
- - Make a directory called certs on the root of the project
+Windows (Use Git Bash):
+  - Make a directory called certs on the root of the project
     - `mkdir certs`
   - Change to certs directory
     - `cd certs`
   - Create and Install certificates
-    - `openssl req -nodes -new -x509   -keyout example.key -out example.crt   -days 365 `  
+    - `openssl req -nodes -new -x509   -keyout example.key -out example.crt   -days 365` 
     - `cat example.crt > example.ca-bundle`
-  - use the certificate .key [self signed or registered]
-    - `export CERTIFICATE_SSL_KEY=`
-  - use the certificate .crt [self signed or registered]
-    - `export CERTIFICATE_SSL_CERT=`
-  - use the certificate CA[chain] [self signed or registered]
-    - `export CERTIFICATE_SSL_CACERTS=`
+  - Update these fields manually in .env file if not given else you can ignore them. 
+    - use the certificate .key [self signed or registered]
+      - `CERTIFICATE_SSL_KEY=`
+    - use the certificate .crt [self signed or registered]
+      - `CERTIFICATE_SSL_CERT=`
+    - use the certificate CA[chain] [self signed or  registered]
+      - `CERTIFICATE_SSL_CACERTS=`
   - switch to the root of the project
     - `cd ..`
+ 
 
 ## Starting the client application script
 - For Inbound Calls
