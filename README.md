@@ -1,4 +1,5 @@
-# **Basic Client Examples to demonstrate Inbound Calls using Enablex Voice APIs. **
+# EnableX Programmable Voice API: Initiating Inbound Calls
+
 This example contains instructions how users can initiate Inbound Calls.
 
 
